@@ -20,6 +20,8 @@ import wespeaker.models.campplus as campplus
 import wespeaker.models.Transformer_WavLM as Transformer_WavLM
 import wespeaker.models.Transformer_WavLM_Drop as Transformer_WavLM_Drop
 import wespeaker.models.Transformer_WavLM_Adapter as Transformer_WavLM_Adapter
+import wespeaker.models.Transformer_WavLM_MC as Transformer_WavLM_MC
+import wespeaker.models.Transformer_WavLM_MC_no_gradmult as Transformer_WavLM_MC_no_gradmult
 
 import wespeaker.models.Transformer_WavLM_Large as Transformer_WavLM_Large
 import wespeaker.models.Transformer_Whisper as Whisper
@@ -45,6 +47,10 @@ def get_speaker_model(model_name: str):
         return getattr(Transformer_WavLM_Adapter, model_name)
     elif model_name.startswith("WavLM_Large_MHFA"):
         return getattr(Transformer_WavLM_Large, model_name)
+    elif model_name.startswith("WavLM_Base_MC_MHFA"):
+        if model_name == "WavLM_Base_MC_MHFA_no_gradmult":
+            return getattr(Transformer_WavLM_MC_no_gradmult, 'WavLM_Base_MC_MHFA')
+        return getattr(Transformer_WavLM_MC, model_name)
     elif model_name.startswith("Whisper"):
         return getattr(Whisper, model_name)
     else:  # model_name error !!!

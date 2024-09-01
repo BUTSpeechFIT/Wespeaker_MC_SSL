@@ -34,6 +34,8 @@ from wespeaker.utils.file_utils import read_table
 from wespeaker.utils.utils import get_logger, parse_config_or_kwargs, set_seed, \
     spk2id
 
+torch.backends.cudnn.benchmark=False
+
 class SpeakerNet(nn.Module):
     def __init__(self, model, projecNet):
         super(SpeakerNet, self).__init__()
@@ -44,6 +46,23 @@ class SpeakerNet(nn.Module):
         x = self.speaker_extractor(x)
         x = self.projection(x, y)
         return x
+
+    def load_projection_weight(self, model_path):
+        self_state = self.projection.state_dict()
+        loaded_state = torch.load(model_path)['model']
+
+        for name, param in loaded_state.items():
+            print(name)
+            if name not in self_state:
+                continue
+            print('     loading')
+
+            if self_state[name].size() != loaded_state[name].size():
+                print("Wrong parameter length: {}, model: {}, loaded: {}".format(name, self_state[name].size(), loaded_state[name].size()))
+                continue
+
+            self_state[name].copy_(param);
+
 
 
 def train(config='conf/config.yaml', **kwargs):
@@ -92,7 +111,14 @@ def train(config='conf/config.yaml', **kwargs):
     # train data
     train_label = configs['train_label']
     train_utt_spk_list = read_table(train_label)
-    spk2id_dict = spk2id(train_utt_spk_list)
+
+    spkid2label_map_path = configs.get('spkid2label_map_path', None)
+    if spkid2label_map_path is not None:
+        spkid2label_map = read_table(spkid2label_map_path) # [..., ['id09269', '5991'], ['id09271', '5992'], ['id09272', '5993']]
+        spk2id_dict = {item[0]: int(item[1]) for item in spkid2label_map}
+    else:
+        spk2id_dict = spk2id(train_utt_spk_list)
+    
     if rank == 0:
         logger.info("<== Data statistics ==>")
         logger.info("train data num: {}, spk num: {}".format(
@@ -104,8 +130,8 @@ def train(config='conf/config.yaml', **kwargs):
                             configs['dataset_args'],
                             spk2id_dict,
                             reverb_lmdb_file=configs.get('reverb_data', None),
-                            noise_lmdb_file=configs.get('noise_data', None))
-    train_dataloader = DataLoader(train_dataset, **configs['dataloader_args'])
+                            noise_lmdb_file=configs.get('noise_data', None)) # 'feat': (chan, samples)
+    train_dataloader = DataLoader(train_dataset, **configs['dataloader_args']) # 'feat': (B, chan, samples)
     batch_size = configs['dataloader_args']['batch_size']
     if configs['dataset_args'].get('sample_num_per_epoch', 0) > 0:
         sample_num_per_epoch = configs['dataset_args']['sample_num_per_epoch']
@@ -120,6 +146,11 @@ def train(config='conf/config.yaml', **kwargs):
     # model
     logger.info("<== Model ==>")
     model = get_speaker_model(configs['model'])(**configs['model_args'])
+
+    fusion_params = model.get_fusion_params()
+    fusion_params_id = list(map(id, fusion_params))
+    transformer_mhfa_params = [p for p in model.parameters() if id(p) not in fusion_params_id]
+
     num_params = sum(param.numel() for param in model.parameters())
     if rank == 0:
         logger.info('speaker_model size: {}'.format(num_params))
@@ -142,6 +173,8 @@ def train(config='conf/config.yaml', **kwargs):
     projection = get_projection(configs['projection_args'])
     # model.add_module("projection", projection)
     model = SpeakerNet(model,projection)
+
+    model.load_projection_weight(configs['model_args']['model_path'])
     
     if rank == 0:
         # print model
@@ -196,9 +229,13 @@ def train(config='conf/config.yaml', **kwargs):
         logger.info("<== Loss ==>")
         logger.info("loss criterion is: " + configs['loss'])
 
-    configs['optimizer_args']['lr'] = configs['scheduler_args']['initial_lr']
+    lr_scaling = configs['scheduler_args'].get('lr_scaling', [1.,1.])
+    param_groups = [
+            {'params': fusion_params,           'lr': lr_scaling[0] * configs['scheduler_args']['initial_lr']},
+            {'params': transformer_mhfa_params, 'lr': lr_scaling[1] * configs['scheduler_args']['initial_lr']},
+        ]
     optimizer = getattr(torch.optim,
-                        configs['optimizer'])(ddp_model.parameters(),
+                        configs['optimizer'])(param_groups,
                                               **configs['optimizer_args'])
     if rank == 0:
         logger.info("<== Optimizer ==>")

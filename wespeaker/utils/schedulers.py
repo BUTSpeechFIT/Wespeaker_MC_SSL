@@ -107,7 +107,8 @@ class BaseClass:
                  final_lr,
                  warm_up_epoch=6,
                  scale_ratio=1.0,
-                 warm_from_zero=False):
+                 warm_from_zero=False,
+                 lr_scaling=None):
         '''
         warm_up_epoch: the first warm_up_epoch is the multiprocess warm-up stage
         scale_ratio: multiplied to the current lr in the multiprocess training
@@ -121,6 +122,7 @@ class BaseClass:
         self.current_iter = 0
         self.warm_up_iter = warm_up_epoch * epoch_iter
         self.warm_from_zero = warm_from_zero
+        self.lr_scaling = lr_scaling
 
     def get_multi_process_coeff(self):
         lr_coeff = 1.0 * self.scale_ratio
@@ -144,8 +146,12 @@ class BaseClass:
 
     def set_lr(self):
         current_lr = self.get_current_lr()
-        for param_group in self.optimizer.param_groups:
-            param_group['lr'] = current_lr
+        if self.lr_scaling is None:
+            scale_list = [1.,] * len(self.optimizer.param_groups)
+        else:
+            scale_list = self.lr_scaling
+        for param_group, scl in zip(self.optimizer.param_groups, scale_list):
+            param_group['lr'] = scl * current_lr
 
     def step(self, current_iter=None):
         if current_iter is not None:
@@ -174,9 +180,10 @@ class ExponentialDecrease(BaseClass):
                  final_lr,
                  warm_up_epoch=6,
                  scale_ratio=1.0,
-                 warm_from_zero=False):
+                 warm_from_zero=False,
+                 lr_scaling=None):
         super().__init__(optimizer, num_epochs, epoch_iter, initial_lr,
-                         final_lr, warm_up_epoch, scale_ratio, warm_from_zero)
+                         final_lr, warm_up_epoch, scale_ratio, warm_from_zero, lr_scaling=lr_scaling)
 
     def get_current_lr(self):
         lr_coeff = self.get_multi_process_coeff()

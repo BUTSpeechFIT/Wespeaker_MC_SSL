@@ -354,16 +354,26 @@ def filter(data,
             assert 'sample_rate' in sample
             assert 'wav' in sample
             sample_rate = sample['sample_rate']
-            wav = sample['wav'][0]
+            single_chan = sample['wav'].shape[0] == 1
+            wav = sample['wav'][0] if single_chan else sample['wav']
 
             min_len = int(frame_shift / 1000 * min_num_frames * sample_rate)
             max_len = int(frame_shift / 1000 * max_num_frames * sample_rate)
 
-            if len(wav) < min_len:
+            if wav.shape[-1] < min_len:
                 continue
-            elif len(wav) > max_len:
-                wav = get_random_chunk(wav, max_len)
-            sample['wav'] = wav.unsqueeze(0)
+            elif wav.shape[-1] > max_len:
+                if single_chan:
+                    wav = get_random_chunk(wav, max_len)
+                else:
+                    chan_list = list()
+                    for chan in wav:
+                        chan_list.append( get_random_chunk(chan, max_len) )
+                    wav = torch.stack(chan_list, dim=0)
+            if single_chan:
+                sample['wav'] = wav.unsqueeze(0)
+            else:
+                sample['wav'] = wav
 
         yield sample
 
@@ -388,9 +398,16 @@ def random_chunk(data, chunk_len, data_type='shard/raw/feat'):
             sample['feat'] = feat
         else:
             assert 'wav' in sample
-            wav = sample['wav'][0]
-            wav = get_random_chunk(wav, chunk_len)
-            sample['wav'] = wav.unsqueeze(0)
+            single_chan = sample['wav'].shape[0] == 1
+            if single_chan:
+                wav = sample['wav'][0]
+                wav = get_random_chunk(wav, chunk_len)
+                sample['wav'] = wav.unsqueeze(0)
+            else:
+                chan_list = list()
+                for chan in sample['wav']:
+                    chan_list.append( get_random_chunk(chan, chunk_len) )
+                sample['wav'] = torch.stack(chan_list, dim=0)
         yield sample
 
 
