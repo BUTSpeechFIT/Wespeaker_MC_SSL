@@ -17,9 +17,11 @@ pip install -r requirements.txt
 ```
 
 ### The repository implements the following paper
+```
 @inproceedings{metro,
   author={Ladislav Mošner and Romain Serizel and Lukáš Burget and Oldřich Plchot and Emmanuel Vincent and Junyi Peng and Jan Černocký},
   title={{Multi-Channel Extension of Pre-trained Models for Speaker Verification}},
   year=2024,
   booktitle={Proc. Interspeech}
 }
+```
